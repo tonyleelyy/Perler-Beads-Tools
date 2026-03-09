@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Image as ImageIcon, ZoomIn, ZoomOut, Check, RefreshCw, SlidersHorizontal, AlertCircle, Grid3X3, Plus, Settings, Trash2, Eraser, Undo2, Redo2 } from 'lucide-react';
+import { Upload, Image as ImageIcon, ZoomIn, ZoomOut, Check, RefreshCw, SlidersHorizontal, AlertCircle, Grid3X3, Plus, Settings, Trash2, Eraser, Undo2, Redo2, Info } from 'lucide-react';
 
 // --- Helper Functions ---
 function rgbToHex(r: number, g: number, b: number) {
@@ -327,14 +327,14 @@ const GridAligner = ({ image, initialConfig, onComplete, onCancel }: { image: st
   };
 
   return (
-    <div className="flex h-screen bg-neutral-100 font-sans">
-      <div className="w-80 bg-white border-r border-neutral-200 flex flex-col shadow-sm z-20">
-        <div className="p-6 border-b border-neutral-200">
-          <h1 className="text-xl font-semibold text-neutral-800">调整网格对齐</h1>
-          <p className="text-sm text-neutral-500 mt-1">请调整边缘和行列数，使网格完全贴合图纸中的格子。</p>
+    <div className="flex flex-col md:flex-row h-screen bg-neutral-100 font-sans">
+      <div className="w-full md:w-80 bg-white border-b md:border-r border-neutral-200 flex flex-col shadow-sm z-20 h-[45vh] md:h-full flex-shrink-0">
+        <div className="p-4 md:p-6 border-b border-neutral-200">
+          <h1 className="text-lg md:text-xl font-semibold text-neutral-800">调整网格对齐</h1>
+          <p className="text-xs md:text-sm text-neutral-500 mt-1">请调整边缘和行列数，使网格完全贴合图纸中的格子。</p>
         </div>
         
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6">
           <div className="space-y-4">
             <h3 className="text-sm font-medium text-neutral-700 flex items-center gap-2">
               <Grid3X3 size={16} /> 网格尺寸
@@ -385,14 +385,14 @@ const GridAligner = ({ image, initialConfig, onComplete, onCancel }: { image: st
           </div>
         </div>
 
-        <div className="p-6 border-t border-neutral-200 flex gap-3">
-          <button onClick={onCancel} className="flex-1 py-2.5 rounded-xl border border-neutral-200 text-neutral-600 font-medium hover:bg-neutral-50 transition-colors">
+        <div className="p-4 md:p-6 border-t border-neutral-200 flex gap-3">
+          <button onClick={onCancel} className="flex-1 py-2 md:py-2.5 rounded-xl border border-neutral-200 text-neutral-600 font-medium hover:bg-neutral-50 transition-colors text-sm md:text-base">
             取消
           </button>
           <button 
             onClick={handleProcess} 
             disabled={isProcessing}
-            className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white font-medium hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-70"
+            className="flex-1 py-2 md:py-2.5 rounded-xl bg-indigo-600 text-white font-medium hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-70 text-sm md:text-base"
           >
             {isProcessing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
             {isProcessing ? '提取中...' : '确认提取'}
@@ -400,7 +400,7 @@ const GridAligner = ({ image, initialConfig, onComplete, onCancel }: { image: st
         </div>
       </div>
 
-      <div className="flex-1 relative bg-neutral-800 overflow-hidden flex items-center justify-center p-8">
+      <div className="flex-1 relative bg-neutral-800 overflow-hidden flex items-center justify-center p-4 md:p-8 min-h-0">
         {imgAspect && (
           <div 
             className="relative shadow-2xl flex-shrink-0" 
@@ -544,18 +544,31 @@ const Workspace = ({
   };
 
   useEffect(() => {
+    const isMobile = window.innerWidth < 768;
+    const sidebarW = isMobile ? 0 : 320;
+    const sidebarH = isMobile ? window.innerHeight * 0.35 : 0;
+    
+    const availableW = window.innerWidth - sidebarW - (isMobile ? 40 : 100);
+    const availableH = window.innerHeight - sidebarH - (isMobile ? 100 : 100);
+
     if (viewMode === 'canvas') {
-      const availableW = window.innerWidth - 320 - 100;
-      const availableH = window.innerHeight - 100;
       const contentW = canvasW * cellSize;
       const contentH = canvasH * cellSize;
       
       let fitZoom = Math.min(availableW / contentW, availableH / contentH);
-      fitZoom = Math.max(0.1, Math.min(5, fitZoom));
+      fitZoom = Math.max(0.1, Math.min(5, fitZoom - 0.1));
       
       setCanvasZoom(fitZoom);
+    } else if (viewMode === 'patterns' && activePattern) {
+      const contentW = activePattern.data.cols * cellSize;
+      const contentH = activePattern.data.rows * cellSize;
+      
+      let fitZoom = Math.min(availableW / contentW, availableH / contentH);
+      fitZoom = Math.max(0.1, Math.min(5, fitZoom - 0.1));
+      
+      setPatternZoom(fitZoom);
     }
-  }, [viewMode]);
+  }, [viewMode, activePattern?.id, canvasW, canvasH]);
 
   const zoom = viewMode === 'patterns' ? patternZoom : canvasZoom;
   const setZoom = viewMode === 'patterns' ? setPatternZoom : setCanvasZoom;
@@ -583,9 +596,9 @@ const Workspace = ({
   const imgTop = -(top / cropHeightPct) * 100;
 
   return (
-    <div className="flex h-screen bg-neutral-100 overflow-hidden font-sans">
-      <div className="w-80 bg-white border-r border-neutral-200 flex flex-col shadow-sm z-20">
-        <div className="p-4 border-b border-neutral-200">
+    <div className="flex flex-col md:flex-row h-screen bg-neutral-100 overflow-hidden font-sans">
+      <div className="w-full md:w-80 bg-white border-b md:border-r border-neutral-200 flex flex-col shadow-sm z-20 h-[35vh] md:h-full flex-shrink-0">
+        <div className="p-3 md:p-4 border-b border-neutral-200">
           <div className="flex bg-neutral-100 rounded-lg p-1 mb-4">
             <button 
               className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-colors ${viewMode === 'patterns' ? 'bg-white shadow-sm text-neutral-800' : 'text-neutral-500 hover:text-neutral-700'}`}
@@ -600,123 +613,133 @@ const Workspace = ({
               主画板
             </button>
           </div>
-          <div>
-            <h1 className="text-xl font-semibold text-neutral-800">
-              {viewMode === 'patterns' ? '图案列表' : '主画板'}
-            </h1>
-            <p className="text-sm text-neutral-500 mt-1">
-              已保存 {patterns.length} 张图案
-            </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs md:text-sm text-neutral-500">
+                已保存 {patterns.length} 张图案
+              </p>
+            </div>
+            <div className="relative">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={onUpload}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                title="上传新图案"
+              />
+              <button className="px-2.5 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors flex items-center gap-1 text-xs font-medium">
+                <Plus size={14} />
+                <span>上传</span>
+              </button>
+            </div>
           </div>
         </div>
         
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {patterns.map(p => (
-            <button
-              key={p.id}
-              onClick={() => {
-                onSelectPattern(p.id);
-                setViewMode('patterns');
-              }}
-              className={`w-full relative rounded-xl overflow-hidden border-2 transition-all group ${
-                activePatternId === p.id && viewMode === 'patterns'
-                  ? 'border-indigo-500 shadow-md' 
-                  : 'border-transparent hover:border-neutral-300'
-              }`}
-            >
-              <img src={p.originalImage} className="w-full h-28 object-cover" alt="Thumbnail" />
-              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2 text-left">
-                <span className="text-white text-xs font-medium drop-shadow-sm">
-                  {p.data.cols} × {p.data.rows}
-                </span>
-              </div>
-            </button>
-          ))}
+        <div className="flex-1 overflow-y-auto p-3 md:p-4 flex flex-col">
+          <div className="grid grid-cols-5 md:grid-cols-2 gap-2 md:gap-3 mb-4">
+            {patterns.map(p => (
+              <button
+                key={p.id}
+                onClick={() => {
+                  onSelectPattern(p.id);
+                  setViewMode('patterns');
+                }}
+                className={`w-full aspect-square relative rounded-xl overflow-hidden border-2 transition-all group ${
+                  activePatternId === p.id && viewMode === 'patterns'
+                    ? 'border-indigo-500 shadow-md' 
+                    : 'border-transparent hover:border-neutral-300'
+                }`}
+              >
+                <img src={p.originalImage} className="w-full h-full object-cover" alt="Thumbnail" />
+                <div className="hidden md:block absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2 text-left">
+                  <span className="text-white text-xs font-medium drop-shadow-sm">
+                    {p.data.cols} × {p.data.rows}
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
           
-          <div className="relative w-full h-28 rounded-xl border-2 border-dashed border-neutral-300 flex flex-col items-center justify-center text-neutral-500 hover:border-indigo-400 hover:text-indigo-500 hover:bg-indigo-50/50 transition-all group cursor-pointer">
-            <input
-              type="file"
-              accept="image/*"
-              onChange={onUpload}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-            />
-            <Plus size={24} className="mb-2" />
-            <span className="text-sm font-medium">上传新图案</span>
+          <div className="mt-auto pt-4 border-t border-neutral-100">
+            <p className="text-xs text-neutral-400 text-center flex items-center justify-center gap-1">
+              <Info size={12} />
+              图案颜色请以原始图纸为准
+            </p>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 relative flex flex-col">
-        <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-md px-4 py-2 rounded-full shadow-md border border-neutral-200 flex items-center gap-4 z-30">
-          <button onClick={() => setZoom(z => Math.max(0.2, z - 0.2))} className="p-2 hover:bg-neutral-100 rounded-full text-neutral-600 transition-colors">
-            <ZoomOut size={20} />
+      <div className="flex-1 relative flex flex-col min-h-0">
+        <div className="absolute top-2 md:top-6 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-md px-1.5 md:px-4 py-1 md:py-2 rounded-full shadow-md border border-neutral-200 flex items-center gap-0.5 md:gap-4 z-30 max-w-[98vw] overflow-x-auto no-scrollbar">
+          <button onClick={() => setZoom(z => Math.max(0.1, z - 0.1))} className="p-1 md:p-2 hover:bg-neutral-100 rounded-full text-neutral-600 transition-colors flex-shrink-0">
+            <ZoomOut size={16} className="md:w-5 md:h-5" />
           </button>
-          <span className="font-mono text-sm w-12 text-center text-neutral-600">{Math.round(zoom * 100)}%</span>
-          <button onClick={() => setZoom(z => Math.min(5, z + 0.2))} className="p-2 hover:bg-neutral-100 rounded-full text-neutral-600 transition-colors">
-            <ZoomIn size={20} />
+          <span className="font-mono text-[10px] md:text-sm w-8 md:w-12 text-center text-neutral-600 flex-shrink-0">{Math.round(zoom * 100)}%</span>
+          <button onClick={() => setZoom(z => Math.min(5, z + 0.1))} className="p-1 md:p-2 hover:bg-neutral-100 rounded-full text-neutral-600 transition-colors flex-shrink-0">
+            <ZoomIn size={16} className="md:w-5 md:h-5" />
           </button>
-          <div className="w-px h-6 bg-neutral-300 mx-2" />
+          <div className="w-px h-4 md:h-6 bg-neutral-300 mx-0.5 md:mx-2 flex-shrink-0" />
           
           {viewMode === 'patterns' ? (
             <>
               <button 
                 onClick={() => setIsEraserMode(!isEraserMode)} 
-                className={`p-2 rounded-full transition-colors ${isEraserMode ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-neutral-100 text-neutral-600'}`} 
+                className={`p-1 md:p-2 rounded-full transition-colors flex-shrink-0 ${isEraserMode ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-neutral-100 text-neutral-600'}`} 
                 title="橡皮擦"
               >
-                <Eraser size={20} />
+                <Eraser size={16} className="md:w-5 md:h-5" />
               </button>
               <button 
                 onClick={handleUndo} 
                 disabled={past.length === 0}
-                className="p-2 rounded-full transition-colors text-neutral-600 hover:bg-neutral-100 disabled:opacity-30 disabled:hover:bg-transparent" 
+                className="p-1 md:p-2 rounded-full transition-colors text-neutral-600 hover:bg-neutral-100 disabled:opacity-30 disabled:hover:bg-transparent flex-shrink-0" 
                 title="撤销"
               >
-                <Undo2 size={20} />
+                <Undo2 size={16} className="md:w-5 md:h-5" />
               </button>
               <button 
                 onClick={handleRedo} 
                 disabled={future.length === 0}
-                className="p-2 rounded-full transition-colors text-neutral-600 hover:bg-neutral-100 disabled:opacity-30 disabled:hover:bg-transparent" 
+                className="p-1 md:p-2 rounded-full transition-colors text-neutral-600 hover:bg-neutral-100 disabled:opacity-30 disabled:hover:bg-transparent flex-shrink-0" 
                 title="重做"
               >
-                <Redo2 size={20} />
+                <Redo2 size={16} className="md:w-5 md:h-5" />
               </button>
-              <div className="w-px h-6 bg-neutral-300 mx-2" />
-              <label className="flex items-center gap-2 text-sm text-neutral-600 cursor-pointer">
+              <div className="w-px h-4 md:h-6 bg-neutral-300 mx-0.5 md:mx-2 flex-shrink-0" />
+              <label className="flex items-center gap-1 md:gap-2 text-[10px] md:text-sm text-neutral-600 cursor-pointer flex-shrink-0">
                 <input 
                   type="checkbox" 
                   checked={showOriginal} 
                   onChange={e => setShowOriginal(e.target.checked)}
-                  className="rounded text-indigo-500 focus:ring-indigo-500"
+                  className="rounded text-indigo-500 focus:ring-indigo-500 w-3 h-3 md:w-4 md:h-4"
                 />
-                显示原图对齐
+                <span className="whitespace-nowrap">显示原图对齐</span>
               </label>
-              <div className="w-px h-6 bg-neutral-300 mx-2" />
-              <button onClick={onEdit} className="p-2 hover:bg-neutral-100 rounded-full text-neutral-600 transition-colors" title="重新调整网格">
-                <Settings size={20} />
+              <div className="w-px h-4 md:h-6 bg-neutral-300 mx-0.5 md:mx-2 flex-shrink-0" />
+              <button onClick={onEdit} className="p-1 md:p-2 hover:bg-neutral-100 rounded-full text-neutral-600 transition-colors flex-shrink-0" title="重新调整网格">
+                <Settings size={16} className="md:w-5 md:h-5" />
               </button>
-              <button onClick={onDelete} className="p-2 hover:bg-red-50 rounded-full text-red-500 transition-colors" title="删除图案">
-                <Trash2 size={20} />
+              <button onClick={onDelete} className="p-1 md:p-2 hover:bg-red-50 rounded-full text-red-500 transition-colors flex-shrink-0" title="删除图案">
+                <Trash2 size={16} className="md:w-5 md:h-5" />
               </button>
             </>
           ) : (
             <>
-              <div className="flex items-center gap-2 text-sm text-neutral-600">
-                画板:
-                <input type="number" min="10" max="200" value={canvasW} onChange={e => setCanvasW(Number(e.target.value))} className="w-14 px-1 py-0.5 border rounded text-center focus:ring-1 focus:ring-indigo-500 outline-none" />
-                ×
-                <input type="number" min="10" max="200" value={canvasH} onChange={e => setCanvasH(Number(e.target.value))} className="w-14 px-1 py-0.5 border rounded text-center focus:ring-1 focus:ring-indigo-500 outline-none" />
+              <div className="flex items-center gap-1 md:gap-2 text-xs md:text-sm text-neutral-600 flex-shrink-0">
+                <span className="whitespace-nowrap">画板:</span>
+                <input type="number" min="10" max="200" value={canvasW} onChange={e => setCanvasW(Number(e.target.value))} className="w-10 md:w-14 px-1 py-0.5 border rounded text-center focus:ring-1 focus:ring-indigo-500 outline-none" />
+                <span>×</span>
+                <input type="number" min="10" max="200" value={canvasH} onChange={e => setCanvasH(Number(e.target.value))} className="w-10 md:w-14 px-1 py-0.5 border rounded text-center focus:ring-1 focus:ring-indigo-500 outline-none" />
               </div>
-              <div className="w-px h-6 bg-neutral-300 mx-2" />
-              <label className="flex items-center gap-2 text-sm text-neutral-600 cursor-pointer">
+              <div className="w-px h-5 md:h-6 bg-neutral-300 mx-1 md:mx-2 flex-shrink-0" />
+              <label className="flex items-center gap-1 md:gap-2 text-xs md:text-sm text-neutral-600 cursor-pointer flex-shrink-0">
                 <input 
                   type="checkbox" 
                   checked={fillCanvas} 
                   onChange={e => setFillCanvas(e.target.checked)}
-                  className="rounded text-indigo-500 focus:ring-indigo-500"
+                  className="rounded text-indigo-500 focus:ring-indigo-500 w-3 h-3 md:w-4 md:h-4"
                 />
-                使用现有图案填充
+                <span className="whitespace-nowrap">使用现有图案填充</span>
               </label>
             </>
           )}
@@ -1002,8 +1025,8 @@ export default function App() {
           <div className="w-20 h-20 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-6">
             <ImageIcon className="w-10 h-10 text-indigo-500" />
           </div>
-          <h1 className="text-3xl font-bold text-neutral-900 mb-3 tracking-tight">拼豆图纸解析器 (本地版)</h1>
-          <p className="text-neutral-500 mb-10 leading-relaxed">
+          <h1 className="text-2xl md:text-3xl font-bold text-neutral-900 mb-3 tracking-tight">拼豆图纸解析器 (本地版)</h1>
+          <p className="text-sm md:text-base text-neutral-500 mb-8 md:mb-10 leading-relaxed">
             无需 AI，纯本地处理。上传图纸，手动对齐网格，自动生成可交互图纸，并支持多图纸切换。
           </p>
 
