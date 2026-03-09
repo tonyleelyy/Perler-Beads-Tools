@@ -1,0 +1,5 @@
+{
+  "name": "拼豆图纸解析器",
+  "description": "上传拼豆图纸，AI自动识别网格尺寸、颜色编码，生成可交互的矢量图纸，方便查看和拼搭。",
+  "requestFramePermissions": []
+}
