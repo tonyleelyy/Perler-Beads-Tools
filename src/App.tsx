@@ -126,6 +126,130 @@ const clusterColors = (cells: ExtractedCell[], tolerance: number) => {
 };
 
 
+interface PlacedPattern {
+  patternId: string;
+  x: number;
+  y: number;
+  rotated: boolean;
+}
+
+function packPatterns(
+  patterns: SavedPattern[],
+  canvasW: number,
+  canvasH: number,
+  fill: boolean
+): { placed: PlacedPattern[], allFit: boolean } {
+  const placed: PlacedPattern[] = [];
+  const grid = Array.from({ length: canvasH }, () => new Array(canvasW).fill(false));
+
+  const canPlace = (w: number, h: number, x: number, y: number) => {
+    if (x + w > canvasW || y + h > canvasH) return false;
+    for (let i = Math.max(0, y - 1); i < Math.min(canvasH, y + h + 1); i++) {
+      for (let j = Math.max(0, x - 1); j < Math.min(canvasW, x + w + 1); j++) {
+        if (grid[i][j]) return false;
+      }
+    }
+    return true;
+  };
+
+  const place = (w: number, h: number, x: number, y: number) => {
+    for (let i = y; i < y + h; i++) {
+      for (let j = x; j < x + w; j++) {
+        grid[i][j] = true;
+      }
+    }
+  };
+
+  let allFit = true;
+
+  // Sort patterns by area descending to pack larger ones first
+  const sortedPatterns = [...patterns].sort((a, b) => (b.data.cols * b.data.rows) - (a.data.cols * a.data.rows));
+
+  for (const p of sortedPatterns) {
+    let placedThis = false;
+    const w = p.data.cols;
+    const h = p.data.rows;
+
+    for (let y = 0; y < canvasH && !placedThis; y++) {
+      for (let x = 0; x < canvasW && !placedThis; x++) {
+        if (canPlace(w, h, x, y)) {
+          place(w, h, x, y);
+          placed.push({ patternId: p.id, x, y, rotated: false });
+          placedThis = true;
+        } else if (canPlace(h, w, x, y)) {
+          place(h, w, x, y);
+          placed.push({ patternId: p.id, x, y, rotated: true });
+          placedThis = true;
+        }
+      }
+    }
+
+    if (!placedThis) {
+      allFit = false;
+    }
+  }
+
+  if (fill && allFit && patterns.length > 0) {
+    let keepGoing = true;
+    let patternIndex = 0;
+    while (keepGoing) {
+      const p = sortedPatterns[patternIndex % sortedPatterns.length];
+      const w = p.data.cols;
+      const h = p.data.rows;
+      let placedThis = false;
+
+      for (let y = 0; y < canvasH && !placedThis; y++) {
+        for (let x = 0; x < canvasW && !placedThis; x++) {
+          if (canPlace(w, h, x, y)) {
+            place(w, h, x, y);
+            placed.push({ patternId: p.id, x, y, rotated: false });
+            placedThis = true;
+          } else if (canPlace(h, w, x, y)) {
+            place(h, w, x, y);
+            placed.push({ patternId: p.id, x, y, rotated: true });
+            placedThis = true;
+          }
+        }
+      }
+
+      if (!placedThis) {
+        let anyPlaced = false;
+        for(let i=1; i<sortedPatterns.length; i++) {
+            const nextP = sortedPatterns[(patternIndex + i) % sortedPatterns.length];
+            const nw = nextP.data.cols;
+            const nh = nextP.data.rows;
+            let pThis = false;
+            for (let y = 0; y < canvasH && !pThis; y++) {
+                for (let x = 0; x < canvasW && !pThis; x++) {
+                    if (canPlace(nw, nh, x, y)) {
+                        place(nw, nh, x, y);
+                        placed.push({ patternId: nextP.id, x, y, rotated: false });
+                        pThis = true;
+                    } else if (canPlace(nh, nw, x, y)) {
+                        place(nh, nw, x, y);
+                        placed.push({ patternId: nextP.id, x, y, rotated: true });
+                        pThis = true;
+                    }
+                }
+            }
+            if (pThis) {
+                anyPlaced = true;
+                patternIndex = (patternIndex + i);
+                break;
+            }
+        }
+        if (!anyPlaced) {
+            keepGoing = false;
+        }
+      }
+      patternIndex++;
+    }
+  }
+
+  return { placed, allFit };
+}
+
+
 // --- Components ---
 
 const GridAligner = ({ image, initialConfig, onComplete, onCancel }: { image: string, initialConfig?: AlignConfig, onComplete: (data: any, config: AlignConfig) => void, onCancel: () => void }) => {
@@ -266,9 +390,18 @@ const Workspace = ({
 }) => {
   const [zoom, setZoom] = useState(1);
   const [showOriginal, setShowOriginal] = useState(false);
+  const [viewMode, setViewMode] = useState<'patterns' | 'canvas'>('patterns');
+  const [canvasW, setCanvasW] = useState(52);
+  const [canvasH, setCanvasH] = useState(52);
+  const [fillCanvas, setFillCanvas] = useState(false);
 
   const activePattern = patterns.find(p => p.id === activePatternId);
   const cellSize = 40;
+
+  const packedData = React.useMemo(() => {
+    if (viewMode !== 'canvas') return null;
+    return packPatterns(patterns, canvasW, canvasH, fillCanvas);
+  }, [patterns, canvasW, canvasH, fillCanvas, viewMode]);
 
   if (!activePattern) return null;
 
@@ -290,9 +423,25 @@ const Workspace = ({
   return (
     <div className="flex h-screen bg-neutral-100 overflow-hidden font-sans">
       <div className="w-80 bg-white border-r border-neutral-200 flex flex-col shadow-sm z-20">
-        <div className="p-6 border-b border-neutral-200 flex items-center justify-between">
+        <div className="p-4 border-b border-neutral-200">
+          <div className="flex bg-neutral-100 rounded-lg p-1 mb-4">
+            <button 
+              className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-colors ${viewMode === 'patterns' ? 'bg-white shadow-sm text-neutral-800' : 'text-neutral-500 hover:text-neutral-700'}`}
+              onClick={() => setViewMode('patterns')}
+            >
+              图案列表
+            </button>
+            <button 
+              className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-colors ${viewMode === 'canvas' ? 'bg-white shadow-sm text-neutral-800' : 'text-neutral-500 hover:text-neutral-700'}`}
+              onClick={() => setViewMode('canvas')}
+            >
+              主画板
+            </button>
+          </div>
           <div>
-            <h1 className="text-xl font-semibold text-neutral-800">图案列表</h1>
+            <h1 className="text-xl font-semibold text-neutral-800">
+              {viewMode === 'patterns' ? '图案列表' : '主画板'}
+            </h1>
             <p className="text-sm text-neutral-500 mt-1">
               已保存 {patterns.length} 张图案
             </p>
@@ -303,9 +452,12 @@ const Workspace = ({
           {patterns.map(p => (
             <button
               key={p.id}
-              onClick={() => onSelectPattern(p.id)}
+              onClick={() => {
+                onSelectPattern(p.id);
+                setViewMode('patterns');
+              }}
               className={`w-full relative rounded-xl overflow-hidden border-2 transition-all group ${
-                activePatternId === p.id 
+                activePatternId === p.id && viewMode === 'patterns'
                   ? 'border-indigo-500 shadow-md' 
                   : 'border-transparent hover:border-neutral-300'
               }`}
@@ -342,88 +494,188 @@ const Workspace = ({
             <ZoomIn size={20} />
           </button>
           <div className="w-px h-6 bg-neutral-300 mx-2" />
-          <label className="flex items-center gap-2 text-sm text-neutral-600 cursor-pointer">
-            <input 
-              type="checkbox" 
-              checked={showOriginal} 
-              onChange={e => setShowOriginal(e.target.checked)}
-              className="rounded text-indigo-500 focus:ring-indigo-500"
-            />
-            显示原图对齐
-          </label>
-          <div className="w-px h-6 bg-neutral-300 mx-2" />
-          <button onClick={onEdit} className="p-2 hover:bg-neutral-100 rounded-full text-neutral-600 transition-colors" title="重新调整网格">
-            <Settings size={20} />
-          </button>
-          <button onClick={onDelete} className="p-2 hover:bg-red-50 rounded-full text-red-500 transition-colors" title="删除图案">
-            <Trash2 size={20} />
-          </button>
+          
+          {viewMode === 'patterns' ? (
+            <>
+              <label className="flex items-center gap-2 text-sm text-neutral-600 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={showOriginal} 
+                  onChange={e => setShowOriginal(e.target.checked)}
+                  className="rounded text-indigo-500 focus:ring-indigo-500"
+                />
+                显示原图对齐
+              </label>
+              <div className="w-px h-6 bg-neutral-300 mx-2" />
+              <button onClick={onEdit} className="p-2 hover:bg-neutral-100 rounded-full text-neutral-600 transition-colors" title="重新调整网格">
+                <Settings size={20} />
+              </button>
+              <button onClick={onDelete} className="p-2 hover:bg-red-50 rounded-full text-red-500 transition-colors" title="删除图案">
+                <Trash2 size={20} />
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 text-sm text-neutral-600">
+                画板:
+                <input type="number" min="10" max="200" value={canvasW} onChange={e => setCanvasW(Number(e.target.value))} className="w-14 px-1 py-0.5 border rounded text-center focus:ring-1 focus:ring-indigo-500 outline-none" />
+                ×
+                <input type="number" min="10" max="200" value={canvasH} onChange={e => setCanvasH(Number(e.target.value))} className="w-14 px-1 py-0.5 border rounded text-center focus:ring-1 focus:ring-indigo-500 outline-none" />
+              </div>
+              <div className="w-px h-6 bg-neutral-300 mx-2" />
+              <label className="flex items-center gap-2 text-sm text-neutral-600 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={fillCanvas} 
+                  onChange={e => setFillCanvas(e.target.checked)}
+                  className="rounded text-indigo-500 focus:ring-indigo-500"
+                />
+                使用现有图案填充
+              </label>
+            </>
+          )}
         </div>
+
+        {viewMode === 'canvas' && packedData && !packedData.allFit && (
+          <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-red-100 text-red-600 px-4 py-2 rounded-lg shadow-md border border-red-200 flex items-center gap-2 z-30">
+            <AlertCircle size={16} />
+            <span className="text-sm font-medium">画板已满，部分图案无法放入，请扩大画板或删除部分图案。</span>
+          </div>
+        )}
 
         <div className="flex-1 overflow-auto bg-neutral-200/50 relative">
           <div className="min-h-full min-w-full flex items-center justify-center p-12">
-            <div 
-              style={{
-                width: data.cols * cellSize * zoom,
-                height: data.rows * cellSize * zoom,
-                transition: 'width 0.2s, height 0.2s'
-              }}
-              className="relative shadow-2xl bg-white flex-shrink-0"
-            >
+            {viewMode === 'patterns' ? (
               <div 
-                className="absolute top-0 left-0 origin-top-left transition-transform duration-200"
-                style={{ 
-                  width: data.cols * cellSize, 
-                  height: data.rows * cellSize,
-                  transform: `scale(${zoom})`
+                style={{
+                  width: data.cols * cellSize * zoom,
+                  height: data.rows * cellSize * zoom,
+                  transition: 'width 0.2s, height 0.2s'
                 }}
+                className="relative shadow-2xl bg-white flex-shrink-0"
               >
-                {showOriginal && (
-                  <div className="absolute inset-0 overflow-hidden pointer-events-none z-0 opacity-40">
-                    <img 
-                      src={originalImage} 
-                      className="absolute max-w-none"
-                      style={{
-                        width: `${imgWidth}%`,
-                        height: `${imgHeight}%`,
-                        left: `${imgLeft}%`,
-                        top: `${imgTop}%`,
-                      }}
-                      alt="Original"
-                    />
-                  </div>
-                )}
-
                 <div 
-                  className="absolute inset-0 pointer-events-none z-10"
-                  style={{
-                    backgroundImage: `
-                      linear-gradient(to right, rgba(0,0,0,0.1) 1px, transparent 1px),
-                      linear-gradient(to bottom, rgba(0,0,0,0.1) 1px, transparent 1px)
-                    `,
-                    backgroundSize: `${cellSize}px ${cellSize}px`
+                  className="absolute top-0 left-0 origin-top-left transition-transform duration-200"
+                  style={{ 
+                    width: data.cols * cellSize, 
+                    height: data.rows * cellSize,
+                    transform: `scale(${zoom})`
                   }}
-                />
+                >
+                  {showOriginal && (
+                    <div className="absolute inset-0 overflow-hidden pointer-events-none z-0 opacity-40">
+                      <img 
+                        src={originalImage} 
+                        className="absolute max-w-none"
+                        style={{
+                          width: `${imgWidth}%`,
+                          height: `${imgHeight}%`,
+                          left: `${imgLeft}%`,
+                          top: `${imgTop}%`,
+                        }}
+                        alt="Original"
+                      />
+                    </div>
+                  )}
 
-                {data.cells.map((bead: any, i: number) => {
-                  if (!bead.color) return null;
+                  <div 
+                    className="absolute inset-0 pointer-events-none z-10"
+                    style={{
+                      backgroundImage: `
+                        linear-gradient(to right, rgba(0,0,0,0.1) 1px, transparent 1px),
+                        linear-gradient(to bottom, rgba(0,0,0,0.1) 1px, transparent 1px)
+                      `,
+                      backgroundSize: `${cellSize}px ${cellSize}px`
+                    }}
+                  />
 
-                  return (
-                    <div
-                      key={`${bead.row}-${bead.col}-${i}`}
-                      className="absolute flex items-center justify-center border border-black/5 z-10"
+                  {data.cells.map((bead: any, i: number) => {
+                    if (!bead.color) return null;
+
+                    return (
+                      <div
+                        key={`${bead.row}-${bead.col}-${i}`}
+                        className="absolute flex items-center justify-center border border-black/5 z-10"
+                        style={{
+                          left: bead.col * cellSize,
+                          top: bead.row * cellSize,
+                          width: cellSize,
+                          height: cellSize,
+                          backgroundColor: bead.color,
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              packedData && (
+                <div 
+                  style={{
+                    width: canvasW * cellSize * zoom,
+                    height: canvasH * cellSize * zoom,
+                    transition: 'width 0.2s, height 0.2s'
+                  }}
+                  className="relative shadow-2xl bg-white flex-shrink-0"
+                >
+                  <div 
+                    className="absolute top-0 left-0 origin-top-left transition-transform duration-200"
+                    style={{ 
+                      width: canvasW * cellSize, 
+                      height: canvasH * cellSize,
+                      transform: `scale(${zoom})`
+                    }}
+                  >
+                    <div 
+                      className="absolute inset-0 pointer-events-none z-0"
                       style={{
-                        left: bead.col * cellSize,
-                        top: bead.row * cellSize,
-                        width: cellSize,
-                        height: cellSize,
-                        backgroundColor: bead.color,
+                        backgroundImage: `
+                          linear-gradient(to right, rgba(0,0,0,0.05) 1px, transparent 1px),
+                          linear-gradient(to bottom, rgba(0,0,0,0.05) 1px, transparent 1px)
+                        `,
+                        backgroundSize: `${cellSize}px ${cellSize}px`
                       }}
                     />
-                  );
-                })}
-              </div>
-            </div>
+
+                    {packedData.placed.map((placed, idx) => {
+                      const p = patterns.find(pat => pat.id === placed.patternId);
+                      if (!p) return null;
+                      return (
+                        <div
+                          key={idx}
+                          className="absolute"
+                          style={{
+                            left: placed.x * cellSize,
+                            top: placed.y * cellSize,
+                            width: (placed.rotated ? p.data.rows : p.data.cols) * cellSize,
+                            height: (placed.rotated ? p.data.cols : p.data.rows) * cellSize,
+                          }}
+                        >
+                          {p.data.cells.map((cell, cIdx) => {
+                            if (!cell.color) return null;
+                            const cx = placed.rotated ? (p.data.rows - 1 - cell.row) : cell.col;
+                            const cy = placed.rotated ? cell.col : cell.row;
+                            return (
+                              <div
+                                key={cIdx}
+                                className="absolute flex items-center justify-center border border-black/5 z-10"
+                                style={{
+                                  left: cx * cellSize,
+                                  top: cy * cellSize,
+                                  width: cellSize,
+                                  height: cellSize,
+                                  backgroundColor: cell.color,
+                                }}
+                              />
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )
+            )}
           </div>
         </div>
       </div>
