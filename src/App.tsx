@@ -305,6 +305,15 @@ const GridAligner = ({ image, initialConfig, onComplete, onCancel }: { image: st
   const [bottom, setBottom] = useState(initialConfig?.bottom ?? 0);
   const [tolerance, setTolerance] = useState(initialConfig?.tolerance ?? 40);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [imgAspect, setImgAspect] = useState<number | null>(null);
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      setImgAspect(img.width / img.height);
+    };
+    img.src = image;
+  }, [image]);
 
   const handleProcess = async () => {
     setIsProcessing(true);
@@ -389,29 +398,42 @@ const GridAligner = ({ image, initialConfig, onComplete, onCancel }: { image: st
       </div>
 
       <div className="flex-1 relative bg-neutral-800 overflow-hidden flex items-center justify-center p-8">
-        <div className="relative max-w-full max-h-full flex items-center justify-center">
-          <img src={image} className="max-w-full max-h-full object-contain shadow-2xl" alt="Preview" />
-          
+        {imgAspect && (
           <div 
-            className="absolute border-4 border-indigo-500 shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] pointer-events-none"
-            style={{
-              left: `${left}%`,
-              right: `${right}%`,
-              top: `${top}%`,
-              bottom: `${bottom}%`
+            className="relative shadow-2xl flex-shrink-0" 
+            style={{ 
+              aspectRatio: `${imgAspect}`,
+              maxWidth: '100%', 
+              maxHeight: '100%' 
             }}
           >
-            <div className="w-full h-full flex flex-col">
-              {Array.from({length: rows}).map((_, r) => (
-                <div key={r} className="flex-1 flex border-b-2 border-indigo-500/80 last:border-0">
-                  {Array.from({length: cols}).map((_, c) => (
-                    <div key={c} className="flex-1 border-r-2 border-indigo-500/80 last:border-0" />
-                  ))}
-                </div>
-              ))}
+            <img 
+              src={image} 
+              className="w-full h-full block" 
+              alt="Preview" 
+            />
+            
+            <div 
+              className="absolute border-4 border-indigo-500 shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] pointer-events-none"
+              style={{
+                left: `${left}%`,
+                right: `${right}%`,
+                top: `${top}%`,
+                bottom: `${bottom}%`
+              }}
+            >
+              <div className="w-full h-full flex flex-col">
+                {Array.from({length: rows}).map((_, r) => (
+                  <div key={r} className="flex-1 flex border-b-2 border-indigo-500/80 last:border-0">
+                    {Array.from({length: cols}).map((_, c) => (
+                      <div key={c} className="flex-1 border-r-2 border-indigo-500/80 last:border-0" />
+                    ))}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
