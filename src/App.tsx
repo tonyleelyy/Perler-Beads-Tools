@@ -130,7 +130,40 @@ interface PlacedPattern {
   patternId: string;
   x: number;
   y: number;
-  rotated: boolean;
+  cells: { x: number, y: number, color: string }[];
+}
+
+function getRotatedCells(p: SavedPattern, rotation: number) {
+  const colored = p.data.cells.filter(c => c.color);
+  if (colored.length === 0) return [];
+  
+  const rows = p.data.rows;
+  const cols = p.data.cols;
+  
+  let mapped = colored.map(c => {
+    let x = c.col;
+    let y = c.row;
+    if (rotation === 90) {
+      x = rows - 1 - c.row;
+      y = c.col;
+    } else if (rotation === 180) {
+      x = cols - 1 - c.col;
+      y = rows - 1 - c.row;
+    } else if (rotation === 270) {
+      x = c.row;
+      y = cols - 1 - c.col;
+    }
+    return { x, y, color: c.color as string };
+  });
+
+  const minX = Math.min(...mapped.map(c => c.x));
+  const minY = Math.min(...mapped.map(c => c.y));
+
+  return mapped.map(c => ({
+    x: c.x - minX,
+    y: c.y - minY,
+    color: c.color
+  }));
 }
 
 function packPatterns(
@@ -142,44 +175,57 @@ function packPatterns(
   const placed: PlacedPattern[] = [];
   const grid = Array.from({ length: canvasH }, () => new Array(canvasW).fill(false));
 
-  const canPlace = (w: number, h: number, x: number, y: number) => {
-    if (x + w > canvasW || y + h > canvasH) return false;
-    for (let i = Math.max(0, y - 1); i < Math.min(canvasH, y + h + 1); i++) {
-      for (let j = Math.max(0, x - 1); j < Math.min(canvasW, x + w + 1); j++) {
-        if (grid[i][j]) return false;
+  const canPlace = (cells: {x: number, y: number}[], startX: number, startY: number) => {
+    for (const c of cells) {
+      const px = startX + c.x;
+      const py = startY + c.y;
+      if (px < 0 || px >= canvasW || py < 0 || py >= canvasH) return false;
+      
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = px + dx;
+          const ny = py + dy;
+          if (nx >= 0 && nx < canvasW && ny >= 0 && ny < canvasH) {
+            if (grid[ny][nx]) return false;
+          }
+        }
       }
     }
     return true;
   };
 
-  const place = (w: number, h: number, x: number, y: number) => {
-    for (let i = y; i < y + h; i++) {
-      for (let j = x; j < x + w; j++) {
-        grid[i][j] = true;
-      }
+  const place = (cells: {x: number, y: number}[], startX: number, startY: number) => {
+    for (const c of cells) {
+      grid[startY + c.y][startX + c.x] = true;
     }
   };
 
   let allFit = true;
 
-  // Sort patterns by area descending to pack larger ones first
-  const sortedPatterns = [...patterns].sort((a, b) => (b.data.cols * b.data.rows) - (a.data.cols * a.data.rows));
+  const sortedPatterns = [...patterns].sort((a, b) => {
+    const aCount = a.data.cells.filter(c => c.color).length;
+    const bCount = b.data.cells.filter(c => c.color).length;
+    return bCount - aCount;
+  });
 
-  for (const p of sortedPatterns) {
+  const patternRotations = sortedPatterns.map(p => ({
+    id: p.id,
+    rotations: [0, 90, 180, 270].map(rot => getRotatedCells(p, rot)).filter(cells => cells.length > 0)
+  }));
+
+  for (const p of patternRotations) {
+    if (p.rotations.length === 0) continue;
     let placedThis = false;
-    const w = p.data.cols;
-    const h = p.data.rows;
 
     for (let y = 0; y < canvasH && !placedThis; y++) {
       for (let x = 0; x < canvasW && !placedThis; x++) {
-        if (canPlace(w, h, x, y)) {
-          place(w, h, x, y);
-          placed.push({ patternId: p.id, x, y, rotated: false });
-          placedThis = true;
-        } else if (canPlace(h, w, x, y)) {
-          place(h, w, x, y);
-          placed.push({ patternId: p.id, x, y, rotated: true });
-          placedThis = true;
+        for (const cells of p.rotations) {
+          if (canPlace(cells, x, y)) {
+            place(cells, x, y);
+            placed.push({ patternId: p.id, x, y, cells });
+            placedThis = true;
+            break;
+          }
         }
       }
     }
@@ -189,57 +235,55 @@ function packPatterns(
     }
   }
 
-  if (fill && allFit && patterns.length > 0) {
+  if (fill && allFit && patternRotations.length > 0) {
     let keepGoing = true;
     let patternIndex = 0;
+    const validPatterns = patternRotations.filter(p => p.rotations.length > 0);
+    
+    if (validPatterns.length === 0) keepGoing = false;
+
     while (keepGoing) {
-      const p = sortedPatterns[patternIndex % sortedPatterns.length];
-      const w = p.data.cols;
-      const h = p.data.rows;
+      const p = validPatterns[patternIndex % validPatterns.length];
       let placedThis = false;
 
       for (let y = 0; y < canvasH && !placedThis; y++) {
         for (let x = 0; x < canvasW && !placedThis; x++) {
-          if (canPlace(w, h, x, y)) {
-            place(w, h, x, y);
-            placed.push({ patternId: p.id, x, y, rotated: false });
-            placedThis = true;
-          } else if (canPlace(h, w, x, y)) {
-            place(h, w, x, y);
-            placed.push({ patternId: p.id, x, y, rotated: true });
-            placedThis = true;
+          for (const cells of p.rotations) {
+            if (canPlace(cells, x, y)) {
+              place(cells, x, y);
+              placed.push({ patternId: p.id, x, y, cells });
+              placedThis = true;
+              break;
+            }
           }
         }
       }
 
       if (!placedThis) {
         let anyPlaced = false;
-        for(let i=1; i<sortedPatterns.length; i++) {
-            const nextP = sortedPatterns[(patternIndex + i) % sortedPatterns.length];
-            const nw = nextP.data.cols;
-            const nh = nextP.data.rows;
-            let pThis = false;
-            for (let y = 0; y < canvasH && !pThis; y++) {
-                for (let x = 0; x < canvasW && !pThis; x++) {
-                    if (canPlace(nw, nh, x, y)) {
-                        place(nw, nh, x, y);
-                        placed.push({ patternId: nextP.id, x, y, rotated: false });
-                        pThis = true;
-                    } else if (canPlace(nh, nw, x, y)) {
-                        place(nh, nw, x, y);
-                        placed.push({ patternId: nextP.id, x, y, rotated: true });
-                        pThis = true;
-                    }
+        for(let i=1; i<validPatterns.length; i++) {
+          const nextP = validPatterns[(patternIndex + i) % validPatterns.length];
+          let pThis = false;
+          for (let y = 0; y < canvasH && !pThis; y++) {
+            for (let x = 0; x < canvasW && !pThis; x++) {
+              for (const cells of nextP.rotations) {
+                if (canPlace(cells, x, y)) {
+                  place(cells, x, y);
+                  placed.push({ patternId: nextP.id, x, y, cells });
+                  pThis = true;
+                  break;
                 }
+              }
             }
-            if (pThis) {
-                anyPlaced = true;
-                patternIndex = (patternIndex + i);
-                break;
-            }
+          }
+          if (pThis) {
+            anyPlaced = true;
+            patternIndex = (patternIndex + i);
+            break;
+          }
         }
         if (!anyPlaced) {
-            keepGoing = false;
+          keepGoing = false;
         }
       }
       patternIndex++;
@@ -638,8 +682,6 @@ const Workspace = ({
                     />
 
                     {packedData.placed.map((placed, idx) => {
-                      const p = patterns.find(pat => pat.id === placed.patternId);
-                      if (!p) return null;
                       return (
                         <div
                           key={idx}
@@ -647,21 +689,16 @@ const Workspace = ({
                           style={{
                             left: placed.x * cellSize,
                             top: placed.y * cellSize,
-                            width: (placed.rotated ? p.data.rows : p.data.cols) * cellSize,
-                            height: (placed.rotated ? p.data.cols : p.data.rows) * cellSize,
                           }}
                         >
-                          {p.data.cells.map((cell, cIdx) => {
-                            if (!cell.color) return null;
-                            const cx = placed.rotated ? (p.data.rows - 1 - cell.row) : cell.col;
-                            const cy = placed.rotated ? cell.col : cell.row;
+                          {placed.cells.map((cell, cIdx) => {
                             return (
                               <div
                                 key={cIdx}
                                 className="absolute flex items-center justify-center border border-black/5 z-10"
                                 style={{
-                                  left: cx * cellSize,
-                                  top: cy * cellSize,
+                                  left: cell.x * cellSize,
+                                  top: cell.y * cellSize,
                                   width: cellSize,
                                   height: cellSize,
                                   backgroundColor: cell.color,
