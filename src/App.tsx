@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Image as ImageIcon, ZoomIn, ZoomOut, Check, RefreshCw, SlidersHorizontal, AlertCircle, Grid3X3, Plus, Settings, Trash2 } from 'lucide-react';
+import { Upload, Image as ImageIcon, ZoomIn, ZoomOut, Check, RefreshCw, SlidersHorizontal, AlertCircle, Grid3X3, Plus, Settings, Trash2, Eraser, Undo2, Redo2 } from 'lucide-react';
 
 // --- Helper Functions ---
 function rgbToHex(r: number, g: number, b: number) {
@@ -122,7 +122,7 @@ const clusterColors = (cells: ExtractedCell[], tolerance: number) => {
     }
   }
 
-  return { cells };
+  return cells;
 };
 
 
@@ -320,8 +320,8 @@ const GridAligner = ({ image, initialConfig, onComplete, onCancel }: { image: st
     // Small timeout to allow UI to update
     setTimeout(async () => {
       const rawCells = await extractGrid(image, rows, cols, left, right, top, bottom);
-      const { cells } = clusterColors(rawCells, tolerance);
-      onComplete({ rows, cols, cells }, { rows, cols, left, right, top, bottom, tolerance });
+      const clusteredCells = clusterColors(rawCells, tolerance);
+      onComplete({ rows, cols, cells: clusteredCells }, { rows, cols, left, right, top, bottom, tolerance });
       setIsProcessing(false);
     }, 50);
   };
@@ -357,26 +357,29 @@ const GridAligner = ({ image, initialConfig, onComplete, onCancel }: { image: st
             </h3>
             <div>
               <label className="text-xs text-neutral-500 mb-1 block">左边距: {left}%</label>
-              <input type="range" min="0" max="40" step="0.5" value={left} onChange={e => setLeft(Number(e.target.value))} className="w-full accent-indigo-500" />
+              <input type="range" min="0" max="100" step="0.5" value={left} onChange={e => setLeft(Number(e.target.value))} className="w-full accent-indigo-500" />
             </div>
             <div>
               <label className="text-xs text-neutral-500 mb-1 block">右边距: {right}%</label>
-              <input type="range" min="0" max="40" step="0.5" value={right} onChange={e => setRight(Number(e.target.value))} className="w-full accent-indigo-500" />
+              <input type="range" min="0" max="100" step="0.5" value={right} onChange={e => setRight(Number(e.target.value))} className="w-full accent-indigo-500" />
             </div>
             <div>
               <label className="text-xs text-neutral-500 mb-1 block">上边距: {top}%</label>
-              <input type="range" min="0" max="40" step="0.5" value={top} onChange={e => setTop(Number(e.target.value))} className="w-full accent-indigo-500" />
+              <input type="range" min="0" max="100" step="0.5" value={top} onChange={e => setTop(Number(e.target.value))} className="w-full accent-indigo-500" />
             </div>
             <div>
               <label className="text-xs text-neutral-500 mb-1 block">下边距: {bottom}%</label>
-              <input type="range" min="0" max="40" step="0.5" value={bottom} onChange={e => setBottom(Number(e.target.value))} className="w-full accent-indigo-500" />
+              <input type="range" min="0" max="100" step="0.5" value={bottom} onChange={e => setBottom(Number(e.target.value))} className="w-full accent-indigo-500" />
             </div>
           </div>
 
           <div className="w-full h-px bg-neutral-100" />
 
           <div className="space-y-4">
-            <h3 className="text-sm font-medium text-neutral-700">颜色合并容差</h3>
+            <h3 className="text-sm font-medium text-neutral-700 flex items-center justify-between">
+              <span>颜色合并容差</span>
+              <span className="text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">{tolerance}%</span>
+            </h3>
             <p className="text-xs text-neutral-400">值越大，相近的颜色越容易被合并为同一种颜色。</p>
             <input type="range" min="10" max="100" value={tolerance} onChange={e => setTolerance(Number(e.target.value))} className="w-full accent-indigo-500" />
           </div>
@@ -445,14 +448,16 @@ const Workspace = ({
   onSelectPattern, 
   onUpload,
   onEdit,
-  onDelete
+  onDelete,
+  onUpdatePattern
 }: { 
   patterns: SavedPattern[], 
   activePatternId: string, 
   onSelectPattern: (id: string) => void, 
   onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void,
   onEdit: () => void,
-  onDelete: () => void
+  onDelete: () => void,
+  onUpdatePattern: (id: string, data: any) => void
 }) => {
   const [patternZoom, setPatternZoom] = useState(1);
   const [canvasZoom, setCanvasZoom] = useState(1);
@@ -462,8 +467,81 @@ const Workspace = ({
   const [canvasH, setCanvasH] = useState(52);
   const [fillCanvas, setFillCanvas] = useState(false);
 
+  // Eraser and Undo/Redo state
+  const [isEraserMode, setIsEraserMode] = useState(false);
+  const [isErasing, setIsErasing] = useState(false);
+  const eraseBuffer = useRef<ExtractedCell[] | null>(null);
+  
+  const [past, setPast] = useState<ExtractedCell[][]>([]);
+  const [future, setFuture] = useState<ExtractedCell[][]>([]);
+
   const activePattern = patterns.find(p => p.id === activePatternId);
   const cellSize = 40;
+
+  useEffect(() => {
+    setPast([]);
+    setFuture([]);
+    setIsEraserMode(false);
+    setIsErasing(false);
+  }, [activePatternId]);
+
+  const handlePointerDown = (index: number) => {
+    if (!isEraserMode || viewMode !== 'patterns' || !activePattern) return;
+    setIsErasing(true);
+    eraseBuffer.current = [...activePattern.data.cells];
+    eraseCell(index);
+  };
+
+  const handlePointerEnter = (index: number) => {
+    if (!isErasing || !isEraserMode || viewMode !== 'patterns' || !activePattern) return;
+    eraseCell(index);
+  };
+
+  const handlePointerUp = () => {
+    setIsErasing(false);
+    if (eraseBuffer.current) {
+      const buffer = eraseBuffer.current;
+      setPast(prev => [...prev, buffer]);
+      setFuture([]);
+      eraseBuffer.current = null;
+    }
+  };
+
+  useEffect(() => {
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => window.removeEventListener('pointerup', handlePointerUp);
+  }, []);
+
+  const eraseCell = (index: number) => {
+    if (!activePattern) return;
+    const currentCells = activePattern.data.cells;
+    if (currentCells[index].color === null) return;
+    const newCells = [...currentCells];
+    newCells[index] = { ...newCells[index], color: null };
+    onUpdatePattern(activePattern.id, { ...activePattern.data, cells: newCells });
+  };
+
+  const handleUndo = () => {
+    if (past.length === 0 || !activePattern) return;
+    const previous = past[past.length - 1];
+    const newPast = past.slice(0, -1);
+    
+    setFuture(prev => [activePattern.data.cells, ...prev]);
+    setPast(newPast);
+    
+    onUpdatePattern(activePattern.id, { ...activePattern.data, cells: previous });
+  };
+
+  const handleRedo = () => {
+    if (future.length === 0 || !activePattern) return;
+    const next = future[0];
+    const newFuture = future.slice(1);
+    
+    setPast(prev => [...prev, activePattern.data.cells]);
+    setFuture(newFuture);
+    
+    onUpdatePattern(activePattern.id, { ...activePattern.data, cells: next });
+  };
 
   useEffect(() => {
     if (viewMode === 'canvas') {
@@ -581,6 +659,30 @@ const Workspace = ({
           
           {viewMode === 'patterns' ? (
             <>
+              <button 
+                onClick={() => setIsEraserMode(!isEraserMode)} 
+                className={`p-2 rounded-full transition-colors ${isEraserMode ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-neutral-100 text-neutral-600'}`} 
+                title="橡皮擦"
+              >
+                <Eraser size={20} />
+              </button>
+              <button 
+                onClick={handleUndo} 
+                disabled={past.length === 0}
+                className="p-2 rounded-full transition-colors text-neutral-600 hover:bg-neutral-100 disabled:opacity-30 disabled:hover:bg-transparent" 
+                title="撤销"
+              >
+                <Undo2 size={20} />
+              </button>
+              <button 
+                onClick={handleRedo} 
+                disabled={future.length === 0}
+                className="p-2 rounded-full transition-colors text-neutral-600 hover:bg-neutral-100 disabled:opacity-30 disabled:hover:bg-transparent" 
+                title="重做"
+              >
+                <Redo2 size={20} />
+              </button>
+              <div className="w-px h-6 bg-neutral-300 mx-2" />
               <label className="flex items-center gap-2 text-sm text-neutral-600 cursor-pointer">
                 <input 
                   type="checkbox" 
@@ -639,11 +741,18 @@ const Workspace = ({
                 className="relative shadow-2xl bg-white flex-shrink-0"
               >
                 <div 
-                  className="absolute top-0 left-0 origin-top-left transition-transform duration-200"
+                  className={`absolute top-0 left-0 origin-top-left transition-transform duration-200 ${isEraserMode ? 'cursor-crosshair touch-none' : ''}`}
                   style={{ 
                     width: data.cols * cellSize, 
                     height: data.rows * cellSize,
                     transform: `scale(${zoom})`
+                  }}
+                  onPointerDown={(e) => {
+                    if (isEraserMode && viewMode === 'patterns' && activePattern) {
+                      e.preventDefault();
+                      setIsErasing(true);
+                      eraseBuffer.current = [...activePattern.data.cells];
+                    }
                   }}
                 >
                   {showOriginal && (
@@ -673,13 +782,21 @@ const Workspace = ({
                     }}
                   />
 
-                  {data.cells.map((bead: any, i: number) => {
+                  {(data.cells || []).map((bead: any, i: number) => {
                     if (!bead.color) return null;
 
                     return (
                       <div
                         key={`${bead.row}-${bead.col}-${i}`}
-                        className="absolute flex items-center justify-center border border-black/5 z-10"
+                        onPointerDown={(e) => {
+                          if (isEraserMode) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handlePointerDown(i);
+                          }
+                        }}
+                        onPointerEnter={() => handlePointerEnter(i)}
+                        className={`absolute flex items-center justify-center border border-black/5 z-10 ${isEraserMode ? 'cursor-crosshair touch-none' : ''}`}
                         style={{
                           left: bead.col * cellSize,
                           top: bead.row * cellSize,
@@ -844,6 +961,9 @@ export default function App() {
             }
           }}
           onDelete={() => setPatternToDelete(activePatternId)}
+          onUpdatePattern={(id, data) => {
+            setPatterns(prev => prev.map(p => p.id === id ? { ...p, data } : p));
+          }}
         />
         
         {patternToDelete && (
