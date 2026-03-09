@@ -454,7 +454,8 @@ const Workspace = ({
   onEdit: () => void,
   onDelete: () => void
 }) => {
-  const [zoom, setZoom] = useState(1);
+  const [patternZoom, setPatternZoom] = useState(1);
+  const [canvasZoom, setCanvasZoom] = useState(1);
   const [showOriginal, setShowOriginal] = useState(false);
   const [viewMode, setViewMode] = useState<'patterns' | 'canvas'>('patterns');
   const [canvasW, setCanvasW] = useState(52);
@@ -463,6 +464,23 @@ const Workspace = ({
 
   const activePattern = patterns.find(p => p.id === activePatternId);
   const cellSize = 40;
+
+  useEffect(() => {
+    if (viewMode === 'canvas') {
+      const availableW = window.innerWidth - 320 - 100;
+      const availableH = window.innerHeight - 100;
+      const contentW = canvasW * cellSize;
+      const contentH = canvasH * cellSize;
+      
+      let fitZoom = Math.min(availableW / contentW, availableH / contentH);
+      fitZoom = Math.max(0.1, Math.min(5, fitZoom));
+      
+      setCanvasZoom(fitZoom);
+    }
+  }, [viewMode]);
+
+  const zoom = viewMode === 'patterns' ? patternZoom : canvasZoom;
+  const setZoom = viewMode === 'patterns' ? setPatternZoom : setCanvasZoom;
 
   const packedData = React.useMemo(() => {
     if (viewMode !== 'canvas') return null;
