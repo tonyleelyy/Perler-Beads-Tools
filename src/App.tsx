@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Image as ImageIcon, ZoomIn, ZoomOut, Check, RefreshCw, SlidersHorizontal, AlertCircle, Grid3X3, Plus, Settings, Trash2, Eraser, Undo2, Redo2, Info } from 'lucide-react';
+import { Upload, Image as ImageIcon, ZoomIn, ZoomOut, Check, RefreshCw, SlidersHorizontal, AlertCircle, Grid3X3, Plus, Settings, Trash2, Eraser, Undo2, Redo2, Info, LayoutGrid, Layout } from 'lucide-react';
 
 // --- Helper Functions ---
 function rgbToHex(r: number, g: number, b: number) {
@@ -170,9 +170,65 @@ function packPatterns(
   patterns: SavedPattern[],
   canvasW: number,
   canvasH: number,
-  fill: boolean
+  fill: boolean,
+  packMode: 'tight' | 'grid' = 'tight'
 ): { placed: PlacedPattern[], allFit: boolean } {
   const placed: PlacedPattern[] = [];
+  let allFit = true;
+
+  if (packMode === 'grid') {
+    const patternList = patterns.map(p => {
+      const cells = getRotatedCells(p, 0);
+      const w = Math.max(...cells.map(c => c.x)) + 1;
+      const h = Math.max(...cells.map(c => c.y)) + 1;
+      return { id: p.id, cells, w, h };
+    }).filter(p => p.cells.length > 0);
+
+    if (patternList.length === 0) return { placed, allFit };
+
+    let currentX = 1;
+    let currentY = 1;
+    let rowHeight = 0;
+
+    const placePattern = (p: typeof patternList[0]) => {
+      if (currentX + p.w > canvasW - 1) {
+        currentX = 1;
+        currentY += rowHeight + 1;
+        rowHeight = 0;
+      }
+
+      if (currentY + p.h > canvasH - 1) {
+        return false;
+      }
+
+      placed.push({ patternId: p.id, x: currentX, y: currentY, cells: p.cells });
+      rowHeight = Math.max(rowHeight, p.h);
+      currentX += p.w + 1;
+      return true;
+    };
+
+    for (const p of patternList) {
+      if (!placePattern(p)) {
+        allFit = false;
+      }
+    }
+
+    if (fill && allFit && patternList.length > 0) {
+      let keepGoing = true;
+      let patternIndex = 0;
+      while (keepGoing) {
+        const p = patternList[patternIndex % patternList.length];
+        if (!placePattern(p)) {
+          keepGoing = false;
+        } else {
+          patternIndex++;
+        }
+      }
+    }
+
+    return { placed, allFit };
+  }
+
   const grid = Array.from({ length: canvasH }, () => new Array(canvasW).fill(false));
 
   const canPlace = (cells: {x: number, y: number}[], startX: number, startY: number) => {
@@ -199,8 +255,6 @@ function packPatterns(
       grid[startY + c.y][startX + c.x] = true;
     }
   };
-
-  let allFit = true;
 
   const sortedPatterns = [...patterns].sort((a, b) => {
     const aCount = a.data.cells.filter(c => c.color).length;
@@ -466,6 +520,7 @@ const Workspace = ({
   const [canvasW, setCanvasW] = useState(52);
   const [canvasH, setCanvasH] = useState(52);
   const [fillCanvas, setFillCanvas] = useState(false);
+  const [packMode, setPackMode] = useState<'tight' | 'grid'>('tight');
 
   // Eraser and Undo/Redo state
   const [isEraserMode, setIsEraserMode] = useState(false);
@@ -575,8 +630,8 @@ const Workspace = ({
 
   const packedData = React.useMemo(() => {
     if (viewMode !== 'canvas') return null;
-    return packPatterns(patterns, canvasW, canvasH, fillCanvas);
-  }, [patterns, canvasW, canvasH, fillCanvas, viewMode]);
+    return packPatterns(patterns, canvasW, canvasH, fillCanvas, packMode);
+  }, [patterns, canvasW, canvasH, fillCanvas, packMode, viewMode]);
 
   if (!activePattern) return null;
 
@@ -741,6 +796,14 @@ const Workspace = ({
                 />
                 <span className="whitespace-nowrap">使用现有图案填充</span>
               </label>
+              <div className="w-px h-5 md:h-6 bg-neutral-300 mx-1 md:mx-2 flex-shrink-0" />
+              <button 
+                onClick={() => setPackMode(m => m === 'tight' ? 'grid' : 'tight')} 
+                className={`p-1.5 md:p-2 rounded-full transition-colors flex-shrink-0 ${packMode === 'grid' ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-neutral-100 text-neutral-600'}`} 
+                title={packMode === 'tight' ? "当前：紧凑排列。点击切换为正着排列" : "当前：正着排列。点击切换为紧凑排列"}
+              >
+                {packMode === 'tight' ? <Layout size={18} className="md:w-5 md:h-5" /> : <LayoutGrid size={18} className="md:w-5 md:h-5" />}
+              </button>
             </>
           )}
         </div>
