@@ -1088,9 +1088,9 @@ export default function App() {
           <div className="w-20 h-20 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-6">
             <ImageIcon className="w-10 h-10 text-indigo-500" />
           </div>
-          <h1 className="text-2xl md:text-3xl font-bold text-neutral-900 mb-3 tracking-tight">拼豆图纸解析器 (本地版)</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-neutral-900 mb-3 tracking-tight">拼豆工具</h1>
           <p className="text-sm md:text-base text-neutral-500 mb-8 md:mb-10 leading-relaxed">
-            无需 AI，纯本地处理。上传图纸，手动对齐网格，自动生成可交互图纸，并支持多图纸切换。
+            建议预先裁切图案。上传图纸，手动对齐网格，即可自动最大化利用画板。
           </p>
 
           <div className="relative group">
