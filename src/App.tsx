@@ -394,11 +394,17 @@ const GridAligner = ({ image, initialConfig, onComplete, onCancel }: { image: st
               <Grid3X3 size={16} /> 网格尺寸
             </h3>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">列数 (Columns): {cols}</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs text-neutral-500">列数 (Columns)</label>
+                <input type="number" min="1" max="100" value={cols} onChange={e => setCols(Number(e.target.value))} className="w-16 text-xs px-2 py-1 border border-neutral-200 rounded text-right focus:ring-1 focus:ring-indigo-500 outline-none" />
+              </div>
               <input type="range" min="5" max="50" value={cols} onChange={e => setCols(Number(e.target.value))} className="w-full accent-indigo-500" />
             </div>
             <div>
-              <label className="text-xs text-neutral-500 mb-1 block">行数 (Rows): {rows}</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs text-neutral-500">行数 (Rows)</label>
+                <input type="number" min="1" max="100" value={rows} onChange={e => setRows(Number(e.target.value))} className="w-16 text-xs px-2 py-1 border border-neutral-200 rounded text-right focus:ring-1 focus:ring-indigo-500 outline-none" />
+              </div>
               <input type="range" min="5" max="50" value={rows} onChange={e => setRows(Number(e.target.value))} className="w-full accent-indigo-500" />
             </div>
           </div>
